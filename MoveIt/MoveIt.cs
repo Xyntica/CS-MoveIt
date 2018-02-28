@@ -71,7 +71,9 @@ namespace MoveIt
         private bool m_snapping = false;
         private bool m_prevRenderZones;
 
+        private CameraController m_cameraController;
         private Moveable m_hoverInstance;
+        private Moveable m_referenceInstance;
         private HashSet<Moveable> m_marqueeInstances;
 
         private ToolBase m_prevTool;
@@ -80,6 +82,7 @@ namespace MoveIt
         private long m_keyTime;
         private long m_rightClickTime;
         private long m_leftClickTime;
+        private long m_middleClickTime;
         private long m_stopWatchfrequency = Stopwatch.Frequency / 1000;
 
         private Vector3 m_startPosition;
@@ -123,6 +126,7 @@ namespace MoveIt
             //m_counters.Clear();
 
             m_toolController = GameObject.FindObjectOfType<ToolController>();
+            m_cameraController = GameObject.FindObjectOfType<CameraController>();
             enabled = false;
 
             m_button = UIView.GetAView().AddUIComponent(typeof(UIMoveItButton)) as UIMoveItButton;
@@ -177,10 +181,13 @@ namespace MoveIt
                 m_prevTool.enabled = true;
             }
             m_prevTool = null;
+
+            this.m_cameraController.enabled = true;
         }
 
         protected override void OnToolUpdate()
         {
+            this.m_cameraController.enabled = (m_middleClickTime == 0);
             lock (m_moves)
             {
                 Ray mouseRay = Camera.main.ScreenPointToRay(Input.mousePosition);
@@ -268,6 +275,39 @@ namespace MoveIt
                                     m_nextAction = Actions.Transform;
                                 }
                             }
+
+                        }
+                        if (Input.mouseScrollDelta.y != 0 && m_hoverInstance != null && m_moves.hasSelection && m_moves.current.Contain(m_hoverInstance.id))
+                        {
+                            DebugUtils.Log("Hovering a " + m_hoverInstance.id.Type + " with ID: " + m_hoverInstance.id);
+                            this.m_cameraController.enabled = false;
+
+                            float differenceY = 1f * Input.mouseScrollDelta.y;
+
+                            if (Event.current.control) differenceY *= 5f;
+
+                            if (m_moves.currentType == MoveQueue.StepType.Selection)
+                            {
+                                m_moves.Push(MoveQueue.StepType.Move, true);
+                            }
+                            MoveQueue.MoveStep step = m_moves.current as MoveQueue.MoveStep;
+
+                            Vector3 newMove = step.moveDelta;
+                            newMove.y += differenceY;
+
+                            if (step.moveDelta != newMove)
+                            {
+                                step.moveDelta = newMove;
+                                m_nextAction = Actions.Transform;
+                            }
+                        }
+
+                        if (Input.GetMouseButtonDown(2) && m_hoverInstance != null && m_moves.hasSelection && m_moves.current.Contain(m_hoverInstance.id))
+                        {
+                            this.m_cameraController.enabled = false;
+                            m_middleClickTime = Stopwatch.GetTimestamp();
+                            m_referenceInstance = m_hoverInstance;
+                            //DebugUtils.Log("Selecting current node with Y: " + m_referenceInstance.position.y);
                         }
 
                         if (Input.GetMouseButtonDown(0))
@@ -280,6 +320,41 @@ namespace MoveIt
                             OnRightMouseDown();
                         }
                     }
+                }
+
+                if (m_middleClickTime != 0 && !Input.GetMouseButton(2))
+                {
+                    if (m_hoverInstance != null && m_referenceInstance != null && m_referenceInstance != m_hoverInstance)
+                    {
+                        float differenceY = m_hoverInstance.position.y - m_referenceInstance.position.y;
+
+                        if (Event.current.control) differenceY /= 2;
+
+                        //DebugUtils.Log("Reference Y: " + m_referenceInstance.position.y + " Hover Y: " + m_hoverInstance.position.y + ". Difference is:" + differenceY);
+
+                        if (m_moves.currentType == MoveQueue.StepType.Selection)
+                        {
+                            m_moves.Push(MoveQueue.StepType.Move, true);
+                        }
+                        MoveQueue.MoveStep step = m_moves.current as MoveQueue.MoveStep;
+
+                        Vector3 newMove = step.moveDelta;
+                        newMove.y += differenceY;
+
+                        if (step.moveDelta != newMove)
+                        {
+                            step.moveDelta = newMove;
+                            m_nextAction = Actions.Transform;
+                        }
+
+                        if (Event.current.alt)
+                        {
+
+                        }
+                        m_referenceInstance = null;
+                    }
+                    m_middleClickTime = 0;
+                    this.m_cameraController.enabled = true;
                 }
 
                 if ((m_leftClickTime != 0 || m_drawingSelection) && !Input.GetMouseButton(0))
